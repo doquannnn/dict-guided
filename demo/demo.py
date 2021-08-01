@@ -3,6 +3,7 @@ import argparse
 import glob
 import multiprocessing as mp
 import os
+import json
 import time
 
 import cv2
@@ -79,17 +80,23 @@ if __name__ == "__main__":
         elif len(args.input) == 1:
             args.input = glob.glob(os.path.expanduser(args.input[0]))
             assert args.input, "The input path(s) was not found"
+        results = []
         for path in tqdm.tqdm(args.input, disable=not args.output):
             # use PIL, to be consistent with evaluation
             img = read_image(path, format="BGR")
             start_time = time.time()
             predictions, visualized_output = demo.run_on_image(img)
+            img_name = path.split('/')[1].split('.')[0]
             logger.info(
                 "{}: detected {} instances in {:.2f}s".format(
-                    path, len(predictions["instances"]), time.time() - start_time
+                    img_name, len(predictions["instances"]), time.time() - start_time
                 )
             )
-
+            instances = {
+              'beziers': predictions['instances'].get('beziers').cpu().detach().numpy().tolist(),
+              'recs': predictions['instances'].get('recs').cpu().detach().numpy().tolist()
+            }
+            results.append((img_name, instances))
             if args.output:
                 if os.path.isdir(args.output):
                     assert os.path.isdir(args.output), args.output
@@ -102,6 +109,8 @@ if __name__ == "__main__":
                 cv2.imshow(WINDOW_NAME, visualized_output.get_image()[:, :, ::-1])
                 if cv2.waitKey(0) == 27:
                     break  # esc to quit
+        with open("instances.txt", 'w') as outfile:
+            json.dump(results, outfile)
     elif args.webcam:
         assert args.input is None, "Cannot have both --input and --webcam!"
         cam = cv2.VideoCapture(0)
